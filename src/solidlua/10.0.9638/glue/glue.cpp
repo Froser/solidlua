@@ -38,6 +38,7 @@ namespace
 		{ "converters_new", glue::converters_new },
 		{ "converters_convert", glue::converters_convert },
 		{ "converters_setProperty", glue::converters_setProperty },
+		{ "converters_getProperty", glue::converters_getProperty },
 		{ NULL, NULL }
 	};
 
@@ -53,6 +54,15 @@ namespace
 		{ "KeepCharacterSpacing", static_cast<lua_Integer>(glue::ConvertProperties::KeepCharacterSpacing) },
 		{ "AverageCharacterScaling", static_cast<lua_Integer>(glue::ConvertProperties::AverageCharacterScaling) },
 		{ "SupportRightToLeftWritingDirection", static_cast<lua_Integer>(glue::ConvertProperties::SupportRightToLeftWritingDirection) },
+		{ "AutoRotate", static_cast<lua_Integer>(glue::ConvertProperties::AutoRotate) },
+		{ "TextRecoverySuspects", static_cast<lua_Integer>(glue::ConvertProperties::TextRecoverySuspects) },
+		{ "DetectSoftHyphens", static_cast<lua_Integer>(glue::ConvertProperties::DetectSoftHyphens) },
+		{ "NoRepairing", static_cast<lua_Integer>(glue::ConvertProperties::NoRepairing) },
+		{ "GraphicsAsImage", static_cast<lua_Integer>(glue::ConvertProperties::GraphicsAsImages) },
+		{ "KeepInvisibleText", static_cast<lua_Integer>(glue::ConvertProperties::KeepInvisibleText) },
+		{ "KeepBackgroundColorText", static_cast<lua_Integer>(glue::ConvertProperties::KeepBackgroundColorText) },
+		{ "Password", static_cast<lua_Integer>(glue::ConvertProperties::Password) },
+
 
 		{ "WordML", static_cast<lua_Integer>(glue::DocumentType::WordML) },
 		{ "Rtf", static_cast<lua_Integer>(glue::DocumentType::Rtf) },
@@ -156,10 +166,17 @@ int glue::platform_init(lua_State* L)
 	bool isSupport = SolidFramework::Platform::Platform::SetSupportDirectory(towstring(path));
 	if (isSupport)
 	{
-		SolidFramework::License::Import(towstring(name),
-			towstring(email),
-			towstring(organization),
-			towstring(unlockcode));
+		try
+		{
+			SolidFramework::License::Import(towstring(name),
+				towstring(email),
+				towstring(organization),
+				towstring(unlockcode));
+		}
+		catch (std::runtime_error)
+		{
+			isSupport = false;
+		}
 	}
 	lua_pushboolean(L, isSupport);
 	return 1;
@@ -178,7 +195,16 @@ int glue::converters_new(lua_State* L)
 	disposeConverter();
 	s_session.type = PdfToWord;
 	if (!s_session.converter)
-		s_session.converter = new SolidFramework::Converters::PdfToWordConverter();
+	{
+		try
+		{
+			s_session.converter = new SolidFramework::Converters::PdfToWordConverter();
+		}
+		catch (SolidFramework::InvalidLicenseException)
+		{
+			luaL_error(L, "Invalid license.");
+		}
+	}
 	return 0;
 }
 
@@ -193,15 +219,38 @@ GLUE_SOLID_API int glue::converters_convert(lua_State* L)
 	GLUE_GET_ARG(getstring(L, &err, __function__, 2, output), err);
 
 	s_session.converter->AddSourceFile(towstring(input));
-	s_session.converter->ConvertTo(towstring(output));
+	s_session.converter->ConvertTo(towstring(output), true);
 	return 0;
 }
 
 #define GLUE_FAST_SETPROPERTY_BOOL(type, method) \
-	{ bool b; \
-	GLUE_GET_ARG(getbool(L, &err, __function__, 2, b), err); \
+	{ bool v; \
+	GLUE_GET_ARG(getbool(L, &err, __function__, 2, v), err); \
 	type* converter = static_cast<type*>(s_session.converter); \
-	converter-> method (b); }
+	converter-> method (v); }
+
+#define GLUE_FAST_SETPROPERTY_STRING(type, method) \
+	{ std::string v; \
+	GLUE_GET_ARG(getstring(L, &err, __function__, 2, v), err); \
+	type* converter = static_cast<type*>(s_session.converter); \
+	converter-> method (towstring(v)); }
+
+#define GLUE_FAST_SETPROPERTY_ENUM(type, method, argtype) \
+	{ lua_Integer v; \
+	GLUE_GET_ARG(getint(L, &err, __function__, 2, v), err); \
+	type* converter = static_cast<type*>(s_session.converter); \
+	converter-> method (static_cast<argtype>(v)); }
+
+#define GLUE_FAST_GETPROPERTY_BOOL(type, method) \
+	{ ret = 1; type* converter = static_cast<type*>(s_session.converter); \
+	lua_pushboolean(L, converter-> method ()); }
+
+#define GLUE_FAST_GETPROPERTY_STRING(type, method) \
+	{ lua_pushnil(L); lua_assert(false);  }
+
+#define GLUE_FAST_GETPROPERTY_ENUM(type, method) \
+	{ ret = 1; type* converter = static_cast<type*>(s_session.converter); \
+	lua_pushinteger(L, static_cast<lua_Integer>(converter-> method ())); }
 
 GLUE_SOLID_API int glue::converters_setProperty(lua_State* L)
 {
@@ -219,12 +268,7 @@ GLUE_SOLID_API int glue::converters_setProperty(lua_State* L)
 	case ConvertProperties::OutputType:
 	{
 		if (s_session.type == PdfToWord)
-		{
-			SolidFramework::Converters::PdfToWordConverter* converter = static_cast<SolidFramework::Converters::PdfToWordConverter*>(s_session.converter);
-			lua_Integer type;
-			GLUE_GET_ARG(getint(L, &err, __function__, 2, type), err);
-			converter->SetOutputType(static_cast<SolidFramework::Converters::Plumbing::WordDocumentType>(type));
-		}
+			GLUE_FAST_SETPROPERTY_ENUM(SolidFramework::Converters::PdfToWordConverter, SetOutputType, SolidFramework::Converters::Plumbing::WordDocumentType);
 		break;
 	}
 	case ConvertProperties::DetectToc:
@@ -287,10 +331,193 @@ GLUE_SOLID_API int glue::converters_setProperty(lua_State* L)
 			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetSupportRightToLeftWritingDirection);
 		break;
 	}
+	case ConvertProperties::AutoRotate:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetAutoRotate);
+		break;
+	}
+	case ConvertProperties::TextRecoverySuspects:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetTextRecoverySuspects);
+		break;
+	}
+	case ConvertProperties::DetectSoftHyphens:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetDetectSoftHyphens);
+		break;
+	}
+	case ConvertProperties::NoRepairing:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetNoRepairing);
+		break;
+	}
+	case ConvertProperties::GraphicsAsImages:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetGraphicsAsImages);
+		break;
+	}
+	case ConvertProperties::KeepInvisibleText:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetKeepInvisibleText);
+		break;
+	}
+	case ConvertProperties::KeepBackgroundColorText:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetKeepBackgroundColorText);
+		break;
+	}
+	case ConvertProperties::Password:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_SETPROPERTY_STRING(SolidFramework::Converters::PdfToWordConverter, SetPassword);
+		break;
+	}
 	default:
 		luaL_error(L, "In function %s: Property type %d is not supported.", __function__, type);
 	}
 
 	lua_pushboolean(L, ret);
 	return 1;
+}
+
+GLUE_SOLID_API int glue::converters_getProperty(lua_State* L)
+{
+	GLUE_CHECK_CONVERTER(L);
+	GLUE_FUNCTION_NAME(converters_getProperty);
+	GLUE_CHECK_ARGUMENTS_COUNT(L, 1);
+	int err;
+	lua_Integer type;
+	GLUE_GET_ARG(getint(L, &err, __function__, 1, type), err);
+
+	int ret = 0;
+	ConvertProperties propertyType = static_cast<ConvertProperties>(type);
+	switch (propertyType)
+	{
+	case ConvertProperties::OutputType:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_ENUM(SolidFramework::Converters::PdfToWordConverter, GetOutputType);
+		break;
+	}
+	case ConvertProperties::DetectToc:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetDetectToc);
+		break;
+	}
+	case ConvertProperties::DetectLists:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetDetectLists);
+		break;
+	}
+	case ConvertProperties::DetectTables:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetDetectTables);
+		break;
+	}
+	case ConvertProperties::DetectTaggedTables:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetDetectTaggedTables);
+		break;
+	}
+	case ConvertProperties::DetectTiledPages:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetDetectTiledPages);
+		break;
+	}
+	case ConvertProperties::DetectStyles:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetDetectStyles);
+		break;
+	}
+	case ConvertProperties::DetectLanguage:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetDetectLanguage);
+		break;
+	}
+	case ConvertProperties::KeepCharacterSpacing:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetKeepCharacterSpacing);
+		break;
+	}
+	case ConvertProperties::AverageCharacterScaling:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetAverageCharacterScaling);
+		break;
+	}
+	case ConvertProperties::SupportRightToLeftWritingDirection:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetSupportRightToLeftWritingDirection);
+		break;
+	}
+	case ConvertProperties::AutoRotate:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetAutoRotate);
+		break;
+	}
+	case ConvertProperties::TextRecoverySuspects:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetTextRecoverySuspects);
+		break;
+	}
+	case ConvertProperties::DetectSoftHyphens:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetDetectSoftHyphens);
+		break;
+	}
+	case ConvertProperties::NoRepairing:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetNoRepairing);
+		break;
+	}
+	case ConvertProperties::GraphicsAsImages:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetGraphicsAsImages);
+		break;
+	}
+	case ConvertProperties::KeepInvisibleText:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetKeepInvisibleText);
+		break;
+	}
+	case ConvertProperties::KeepBackgroundColorText:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetKeepBackgroundColorText);
+		break;
+	}
+	case ConvertProperties::Password:
+	{
+		if (s_session.type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_STRING(SolidFramework::Converters::PdfToWordConverter, GetPassword);
+		break;
+	}
+	default:
+		luaL_error(L, "In function %s: Property type %d is not supported.", __function__, type);
+	}
+
+	lua_pushboolean(L, ret);
+	return 2;
 }
