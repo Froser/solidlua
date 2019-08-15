@@ -21,10 +21,12 @@ enum DocumentType
 	Docx = SolidFramework::Converters::Plumbing::WordDocumentType::DocX,
 };
 
+typedef SolidFramework::Plumbing::LicensePermissions LicensePermissions;
+
 enum class ConvertProperties
 {
 	/*!
-	 输出文件类型。[glue::DocumentType, glue::Docx]
+	 输出文件类型。[glue::DocumentType]
 	*/
 	OutputType,
 
@@ -100,7 +102,7 @@ enum class ConvertProperties
 	NoRepairing,
 
 	/*!
-	 矢量图是否自动转换为位图。
+	 矢量图是否自动转换为位图。[bool]
 	*/
 	GraphicsAsImages,
 
@@ -135,6 +137,13 @@ extern "C"
 	 r1 [bool]: 是否成功
 	*/
 	GLUE_SOLID_API int platform_init(lua_State* L);
+
+	//! 查询是否拥有某个能力。
+	/*
+	 p1 [int]: 需要查询的某个能力，参考参考glue::LicensePermissions。
+	 r1 [bool]: 是否拥有这个能力。
+	*/
+	GLUE_SOLID_API int license_allows(lua_State* L);
 
 	//! 创建一个转换器。在进行任何操作之前，应该先创建一个转换器。
 	/*

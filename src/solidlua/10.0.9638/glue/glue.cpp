@@ -35,6 +35,7 @@ namespace
 
 	static const luaL_Reg solid_funcs[] = {
 		{ "platform_init", glue::platform_init },
+		{ "license_allows", glue::license_allows },
 		{ "converters_new", glue::converters_new },
 		{ "converters_convert", glue::converters_convert },
 		{ "converters_setProperty", glue::converters_setProperty },
@@ -69,6 +70,12 @@ namespace
 		{ "Txt", static_cast<lua_Integer>(glue::DocumentType::Txt) },
 		{ "Doc", static_cast<lua_Integer>(glue::DocumentType::Doc) },
 		{ "Docx", static_cast<lua_Integer>(glue::DocumentType::Docx) },
+
+		{ "None", static_cast<lua_Integer>(glue::LicensePermissions::None) },
+		{ "PdfToWord", static_cast<lua_Integer>(glue::LicensePermissions::PdfToWord) },
+		{ "PdfTools", static_cast<lua_Integer>(glue::LicensePermissions::PdfTools) },
+		{ "PdfFree", static_cast<lua_Integer>(glue::LicensePermissions::PdfFree) },
+		{ "Ocr", static_cast<lua_Integer>(glue::LicensePermissions::Ocr) },
 		{ NULL, NULL }
 	};
 
@@ -92,6 +99,17 @@ namespace
 	{
 		static std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> c;
 		return c.from_bytes(s);
+	}
+
+	std::string tostring(const std::wstring& s)
+	{
+		unsigned len = s.size() * 4;
+		setlocale(LC_CTYPE, "");
+		char *p = new char[len];
+		wcstombs(p, s.c_str(), len);
+		std::string str1(p);
+		delete[] p;
+		return str1;
 	}
 
 	bool getstring(lua_State* L, int* err, const std::string& function, int index, std::string& str)
@@ -182,6 +200,19 @@ int glue::platform_init(lua_State* L)
 	return 1;
 }
 
+
+int glue::license_allows(lua_State* L)
+{
+	GLUE_FUNCTION_NAME(license_allows);
+	GLUE_CHECK_ARGUMENTS_COUNT(L, 1);
+	int err;
+	lua_Integer type;
+	GLUE_GET_ARG(getint(L, &err, __function__, 1, type), err);
+	bool allows = SolidFramework::License::Allows(static_cast<SolidFramework::Plumbing::LicensePermissions>(type));
+	lua_pushboolean(L, allows);
+	return 1;
+}
+
 int glue::converters_new(lua_State* L)
 {
 	GLUE_FUNCTION_NAME(converters_new);
@@ -246,7 +277,8 @@ GLUE_SOLID_API int glue::converters_convert(lua_State* L)
 	lua_pushboolean(L, converter-> method ()); }
 
 #define GLUE_FAST_GETPROPERTY_STRING(type, method) \
-	{ lua_pushnil(L); lua_assert(false);  }
+	{ ret = 1; type* converter = static_cast<type*>(s_session.converter); \
+	lua_pushstring(L, tostring(converter-> method ()).c_str()); lua_assert(false);  }
 
 #define GLUE_FAST_GETPROPERTY_ENUM(type, method) \
 	{ ret = 1; type* converter = static_cast<type*>(s_session.converter); \
