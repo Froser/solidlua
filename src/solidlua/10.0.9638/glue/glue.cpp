@@ -12,7 +12,7 @@
 
 #define GLUE_GET_ARG(expr, err) if (!(expr)) return err;
 
-#define GLUE_CHECK_CONVERTER(L) if (!s_session.converter) return luaL_error(L, "You have to create a converter before convert.");
+#define GLUE_CHECK_CONVERTER(L) if (!s_session.converters[s_session.current].converter) return luaL_error(L, "You have to create a converter before convert.");
 
 struct glue_Int_Constants
 {
@@ -27,16 +27,27 @@ enum ConverterType
 
 namespace
 {
-	struct session_t
+	struct converter_t
 	{
 		SolidFramework::Converters::Converter* converter;
 		ConverterType type;
+	};
+
+	constexpr int MAX_CONVERTER_COUNT = 100;
+
+	struct session_t
+	{
+		converter_t converters[MAX_CONVERTER_COUNT];
+		int current;
+		int maxconverters;
 	} s_session;
 
 	static const luaL_Reg solid_funcs[] = {
 		{ "platform_init", glue::platform_init },
+		{ "platform_init_preset", glue::platform_init_preset },
 		{ "license_allows", glue::license_allows },
 		{ "converters_new", glue::converters_new },
+		{ "converters_select", glue::converters_select },
 		{ "converters_convert", glue::converters_convert },
 		{ "converters_setProperty", glue::converters_setProperty },
 		{ "converters_getProperty", glue::converters_getProperty },
@@ -63,7 +74,6 @@ namespace
 		{ "KeepInvisibleText", static_cast<lua_Integer>(glue::ConvertProperties::KeepInvisibleText) },
 		{ "KeepBackgroundColorText", static_cast<lua_Integer>(glue::ConvertProperties::KeepBackgroundColorText) },
 		{ "Password", static_cast<lua_Integer>(glue::ConvertProperties::Password) },
-
 
 		{ "WordML", static_cast<lua_Integer>(glue::DocumentType::WordML) },
 		{ "Rtf", static_cast<lua_Integer>(glue::DocumentType::Rtf) },
@@ -103,10 +113,13 @@ namespace
 
 	std::string tostring(const std::wstring& s)
 	{
+		if (s.empty())
+			return std::string();
+
 		unsigned len = s.size() * 4;
 		setlocale(LC_CTYPE, "");
 		char *p = new char[len];
-		wcstombs(p, s.c_str(), len);
+		wcstombs_s(nullptr, p, len, s.c_str(), len);
 		std::string str1(p);
 		delete[] p;
 		return str1;
@@ -150,8 +163,12 @@ namespace
 
 	void disposeConverter()
 	{
-		if (s_session.converter)
-			delete s_session.converter;
+		int i = 0;
+		while (s_session.converters[i].converter)
+		{
+			delete s_session.converters[i].converter;
+			++i;
+		}
 	}
 }
 
@@ -200,6 +217,37 @@ int glue::platform_init(lua_State* L)
 	return 1;
 }
 
+int glue::platform_init_preset(lua_State* L)
+{
+#if USE_PRESET_SOLID_CODE
+	GLUE_FUNCTION_NAME(platform_init_preset);
+	GLUE_CHECK_ARGUMENTS_COUNT(L, 1);
+	int err;
+	std::string path;
+	GLUE_GET_ARG(getstring(L, &err, __function__, 1, path), err);
+
+	bool isSupport = SolidFramework::Platform::Platform::SetSupportDirectory(towstring(path));
+	if (isSupport)
+	{
+		try
+		{
+			SolidFramework::License::Import(
+				PRESET_SOLID_NAME,
+				PRESET_SOLID_EMAIL,
+				PRESET_SOLID_ORGANIZATION,
+				PRESET_UNLOCK_CODE);
+		}
+		catch (std::runtime_error)
+		{
+			isSupport = false;
+		}
+	}
+	lua_pushboolean(L, isSupport);
+	return 1;
+#else
+	luaL_error(L, "No preset solid code is set. Call Solid.platform_init instead.");
+#endif
+}
 
 int glue::license_allows(lua_State* L)
 {
@@ -223,20 +271,42 @@ int glue::converters_new(lua_State* L)
 	if (type != PdfToWord)
 		luaL_error(L, "Converter type is not supported.");
 
-	disposeConverter();
-	s_session.type = PdfToWord;
-	if (!s_session.converter)
+	int index = s_session.maxconverters++;
+	s_session.converters[index].type = PdfToWord;
+	if (!s_session.converters[index].converter)
 	{
 		try
 		{
-			s_session.converter = new SolidFramework::Converters::PdfToWordConverter();
+			s_session.converters[index].converter = new SolidFramework::Converters::PdfToWordConverter();
+			lua_pushinteger(L, static_cast<lua_Integer>(index));
 		}
 		catch (SolidFramework::InvalidLicenseException)
 		{
 			luaL_error(L, "Invalid license.");
 		}
 	}
-	return 0;
+	else
+	{
+		luaL_error(L, "Index %d has already created a converter.");
+	}
+	return 1;
+}
+
+int glue::converters_select(lua_State* L)
+{
+	GLUE_FUNCTION_NAME(converters_select);
+	GLUE_CHECK_ARGUMENTS_COUNT(L, 1);
+	bool ret = false;
+	int err;
+	lua_Integer index;
+	GLUE_GET_ARG(getint(L, &err, __function__, 1, index), err);
+	if (s_session.converters[index].converter)
+	{
+		s_session.current = static_cast<int>(index);
+		ret = true;
+	}
+	lua_pushboolean(L, ret);
+	return 1;
 }
 
 GLUE_SOLID_API int glue::converters_convert(lua_State* L)
@@ -249,39 +319,40 @@ GLUE_SOLID_API int glue::converters_convert(lua_State* L)
 	GLUE_GET_ARG(getstring(L, &err, __function__, 1, input), err);
 	GLUE_GET_ARG(getstring(L, &err, __function__, 2, output), err);
 
-	s_session.converter->AddSourceFile(towstring(input));
-	s_session.converter->ConvertTo(towstring(output), true);
-	return 0;
+	s_session.converters[s_session.current].converter->AddSourceFile(towstring(input));
+	SolidFramework::Converters::Plumbing::ConversionStatus status = s_session.converters[s_session.current].converter->ConvertTo(towstring(output), true);
+	lua_pushinteger(L, static_cast<lua_Integer>(status));
+	return 1;
 }
 
 #define GLUE_FAST_SETPROPERTY_BOOL(type, method) \
 	{ bool v; \
 	GLUE_GET_ARG(getbool(L, &err, __function__, 2, v), err); \
-	type* converter = static_cast<type*>(s_session.converter); \
+	type* converter = static_cast<type*>(s_session.converters[s_session.current].converter); \
 	converter-> method (v); }
 
 #define GLUE_FAST_SETPROPERTY_STRING(type, method) \
 	{ std::string v; \
 	GLUE_GET_ARG(getstring(L, &err, __function__, 2, v), err); \
-	type* converter = static_cast<type*>(s_session.converter); \
+	type* converter = static_cast<type*>(s_session.converters[s_session.current].converter); \
 	converter-> method (towstring(v)); }
 
 #define GLUE_FAST_SETPROPERTY_ENUM(type, method, argtype) \
 	{ lua_Integer v; \
 	GLUE_GET_ARG(getint(L, &err, __function__, 2, v), err); \
-	type* converter = static_cast<type*>(s_session.converter); \
+	type* converter = static_cast<type*>(s_session.converters[s_session.current].converter); \
 	converter-> method (static_cast<argtype>(v)); }
 
 #define GLUE_FAST_GETPROPERTY_BOOL(type, method) \
-	{ ret = 1; type* converter = static_cast<type*>(s_session.converter); \
+	{ ret = 1; type* converter = static_cast<type*>(s_session.converters[s_session.current].converter); \
 	lua_pushboolean(L, converter-> method ()); }
 
 #define GLUE_FAST_GETPROPERTY_STRING(type, method) \
-	{ ret = 1; type* converter = static_cast<type*>(s_session.converter); \
+	{ ret = 1; type* converter = static_cast<type*>(s_session.converters[s_session.current].converter); \
 	lua_pushstring(L, tostring(converter-> method ()).c_str()); lua_assert(false);  }
 
 #define GLUE_FAST_GETPROPERTY_ENUM(type, method) \
-	{ ret = 1; type* converter = static_cast<type*>(s_session.converter); \
+	{ ret = 1; type* converter = static_cast<type*>(s_session.converters[s_session.current].converter); \
 	lua_pushinteger(L, static_cast<lua_Integer>(converter-> method ())); }
 
 GLUE_SOLID_API int glue::converters_setProperty(lua_State* L)
@@ -299,115 +370,115 @@ GLUE_SOLID_API int glue::converters_setProperty(lua_State* L)
 	{
 	case ConvertProperties::OutputType:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_SETPROPERTY_ENUM(SolidFramework::Converters::PdfToWordConverter, SetOutputType, SolidFramework::Converters::Plumbing::WordDocumentType);
 		break;
 	}
 	case ConvertProperties::DetectToc:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetDetectToc);
 		break;
 	}
 	case ConvertProperties::DetectLists:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetDetectLists);
 		break;
 	}
 	case ConvertProperties::DetectTables:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetDetectTables);
 		break;
 	}
 	case ConvertProperties::DetectTaggedTables:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetDetectTaggedTables);
 		break;
 	}
 	case ConvertProperties::DetectTiledPages:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetDetectTiledPages);
 		break;
 	}
 	case ConvertProperties::DetectStyles:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetDetectStyles);
 		break;
 	}
 	case ConvertProperties::DetectLanguage:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetDetectLanguage);
 		break;
 	}
 	case ConvertProperties::KeepCharacterSpacing:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetKeepCharacterSpacing);
 		break;
 	}
 	case ConvertProperties::AverageCharacterScaling:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetAverageCharacterScaling);
 		break;
 	}
 	case ConvertProperties::SupportRightToLeftWritingDirection:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetSupportRightToLeftWritingDirection);
 		break;
 	}
 	case ConvertProperties::AutoRotate:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetAutoRotate);
 		break;
 	}
 	case ConvertProperties::TextRecoverySuspects:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetTextRecoverySuspects);
 		break;
 	}
 	case ConvertProperties::DetectSoftHyphens:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetDetectSoftHyphens);
 		break;
 	}
 	case ConvertProperties::NoRepairing:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetNoRepairing);
 		break;
 	}
 	case ConvertProperties::GraphicsAsImages:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetGraphicsAsImages);
 		break;
 	}
 	case ConvertProperties::KeepInvisibleText:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetKeepInvisibleText);
 		break;
 	}
 	case ConvertProperties::KeepBackgroundColorText:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetKeepBackgroundColorText);
 		break;
 	}
 	case ConvertProperties::Password:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_SETPROPERTY_STRING(SolidFramework::Converters::PdfToWordConverter, SetPassword);
 		break;
 	}
@@ -434,115 +505,115 @@ GLUE_SOLID_API int glue::converters_getProperty(lua_State* L)
 	{
 	case ConvertProperties::OutputType:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_GETPROPERTY_ENUM(SolidFramework::Converters::PdfToWordConverter, GetOutputType);
 		break;
 	}
 	case ConvertProperties::DetectToc:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetDetectToc);
 		break;
 	}
 	case ConvertProperties::DetectLists:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetDetectLists);
 		break;
 	}
 	case ConvertProperties::DetectTables:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetDetectTables);
 		break;
 	}
 	case ConvertProperties::DetectTaggedTables:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetDetectTaggedTables);
 		break;
 	}
 	case ConvertProperties::DetectTiledPages:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetDetectTiledPages);
 		break;
 	}
 	case ConvertProperties::DetectStyles:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetDetectStyles);
 		break;
 	}
 	case ConvertProperties::DetectLanguage:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetDetectLanguage);
 		break;
 	}
 	case ConvertProperties::KeepCharacterSpacing:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetKeepCharacterSpacing);
 		break;
 	}
 	case ConvertProperties::AverageCharacterScaling:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetAverageCharacterScaling);
 		break;
 	}
 	case ConvertProperties::SupportRightToLeftWritingDirection:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetSupportRightToLeftWritingDirection);
 		break;
 	}
 	case ConvertProperties::AutoRotate:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetAutoRotate);
 		break;
 	}
 	case ConvertProperties::TextRecoverySuspects:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetTextRecoverySuspects);
 		break;
 	}
 	case ConvertProperties::DetectSoftHyphens:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetDetectSoftHyphens);
 		break;
 	}
 	case ConvertProperties::NoRepairing:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetNoRepairing);
 		break;
 	}
 	case ConvertProperties::GraphicsAsImages:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetGraphicsAsImages);
 		break;
 	}
 	case ConvertProperties::KeepInvisibleText:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetKeepInvisibleText);
 		break;
 	}
 	case ConvertProperties::KeepBackgroundColorText:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetKeepBackgroundColorText);
 		break;
 	}
 	case ConvertProperties::Password:
 	{
-		if (s_session.type == PdfToWord)
+		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_GETPROPERTY_STRING(SolidFramework::Converters::PdfToWordConverter, GetPassword);
 		break;
 	}

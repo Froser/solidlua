@@ -3,6 +3,10 @@
 #define CURRENT_SDK_VERSION SDK_VERSION_10_0_9638
 #define VERSION_EQUALS(v) CURRENT_SDK_VERSION == v
 
+#if USE_PRESET_SOLID_CODE
+#include <preset_solid_code.h>
+#endif
+
 #if VERSION_EQUALS(SDK_VERSION_10_0_9638)
 #include "10.0.9638/solidsdk/SolidFramework.h"
 #include "10.0.9638/glue/glue.h"

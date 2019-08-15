@@ -23,7 +23,7 @@ add_executable(${PROJECT_NAME}
 		${SOURCES}
 	)
 
-add_definitions(-DUNICODE -D_UNICODE)
+add_definitions(-DUNICODE -D_UNICODE -DUSE_PRESET_SOLID_CODE)
 
 target_link_libraries(${PROJECT_NAME}
 	lua

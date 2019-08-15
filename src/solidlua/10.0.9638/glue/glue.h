@@ -138,6 +138,13 @@ extern "C"
 	*/
 	GLUE_SOLID_API int platform_init(lua_State* L);
 
+	//! 使用默认的验证信息初始化solid sdk。
+	/*!
+	 p1 [string]: solid sdk路径
+	 r1 [bool]: 是否成功
+	*/
+	GLUE_SOLID_API int platform_init_preset(lua_State* L);
+
 	//! 查询是否拥有某个能力。
 	/*
 	 p1 [int]: 需要查询的某个能力，参考参考glue::LicensePermissions。
@@ -149,13 +156,22 @@ extern "C"
 	/*
 	 p1 [int]: 转换器类型。
 	    目前类型仅支持传入0，表示PDF转Word文件。
+	 r1 [int]: 当前创建的转换器索引。
 	*/
 	GLUE_SOLID_API int converters_new(lua_State* L);
+
+	//! 选择一个转换器。
+	/*
+	 p1 [int]: 转换器索引。如果转换器不存在，则选择失败。
+	 r1 [bool]: 是否选择转换器成功。
+	*/
+	GLUE_SOLID_API int converters_select(lua_State* L);
 
 	//! 开始转换。
 	/*
 	 p1 [string]: 文件输入路径
 	 p2 [string]: 文件输出路径
+	 r1 [int]: 转换结果，参考SolidFramework::Converters::Plumbing::ConversionStatus
 	*/
 	GLUE_SOLID_API int converters_convert(lua_State* L);
 
