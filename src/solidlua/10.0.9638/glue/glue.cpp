@@ -1,4 +1,5 @@
 ﻿#include "stdafx.h"
+#include <array>
 #include "glue.h"
 #include <codecvt>
 #include <include_solid.h>
@@ -14,12 +15,6 @@
 
 #define GLUE_CHECK_CONVERTER(L) if (!s_session.converters[s_session.current].converter) return luaL_error(L, "You have to create a converter before convert.");
 
-struct glue_Int_Constants
-{
-	const char* name;
-	lua_Integer value;
-};
-
 enum ConverterType
 {
 	PdfToWord,
@@ -34,6 +29,19 @@ namespace
 	};
 
 	constexpr int MAX_CONVERTER_COUNT = 100;
+	constexpr size_t MAX_CONSTANT_ENUMS = 50;
+
+	struct glue_Int_Constants
+	{
+		const char* name;
+		lua_Integer value;
+	};
+
+	struct glue_Constants
+	{
+		const char* name;
+		const glue_Int_Constants* value;
+	};
 
 	struct session_t
 	{
@@ -46,6 +54,7 @@ namespace
 		{ "platform_init", glue::platform_init },
 		{ "platform_init_preset", glue::platform_init_preset },
 		{ "license_allows", glue::license_allows },
+		{ "ocr_init", glue::ocr_init },
 		{ "converters_new", glue::converters_new },
 		{ "converters_select", glue::converters_select },
 		{ "converters_convert", glue::converters_convert },
@@ -54,7 +63,8 @@ namespace
 		{ NULL, NULL }
 	};
 
-	static const glue_Int_Constants constants[] = {
+	static const glue_Int_Constants s_convertproperties[] =
+	{
 		{ "OutputType", static_cast<lua_Integer>(glue::ConvertProperties::OutputType) },
 		{ "DetectToc", static_cast<lua_Integer>(glue::ConvertProperties::DetectToc) },
 		{ "DetectLists", static_cast<lua_Integer>(glue::ConvertProperties::DetectLists) },
@@ -67,6 +77,7 @@ namespace
 		{ "AverageCharacterScaling", static_cast<lua_Integer>(glue::ConvertProperties::AverageCharacterScaling) },
 		{ "SupportRightToLeftWritingDirection", static_cast<lua_Integer>(glue::ConvertProperties::SupportRightToLeftWritingDirection) },
 		{ "AutoRotate", static_cast<lua_Integer>(glue::ConvertProperties::AutoRotate) },
+		{ "TextRecoveryLanguage", static_cast<lua_Integer>(glue::ConvertProperties::TextRecoveryLanguage) },
 		{ "TextRecoverySuspects", static_cast<lua_Integer>(glue::ConvertProperties::TextRecoverySuspects) },
 		{ "DetectSoftHyphens", static_cast<lua_Integer>(glue::ConvertProperties::DetectSoftHyphens) },
 		{ "NoRepairing", static_cast<lua_Integer>(glue::ConvertProperties::NoRepairing) },
@@ -74,13 +85,21 @@ namespace
 		{ "KeepInvisibleText", static_cast<lua_Integer>(glue::ConvertProperties::KeepInvisibleText) },
 		{ "KeepBackgroundColorText", static_cast<lua_Integer>(glue::ConvertProperties::KeepBackgroundColorText) },
 		{ "Password", static_cast<lua_Integer>(glue::ConvertProperties::Password) },
+		{ NULL, NULL }
+	};
 
+	static const glue_Int_Constants s_documenttype[] = 
+	{
 		{ "WordML", static_cast<lua_Integer>(glue::DocumentType::WordML) },
 		{ "Rtf", static_cast<lua_Integer>(glue::DocumentType::Rtf) },
 		{ "Txt", static_cast<lua_Integer>(glue::DocumentType::Txt) },
 		{ "Doc", static_cast<lua_Integer>(glue::DocumentType::Doc) },
 		{ "Docx", static_cast<lua_Integer>(glue::DocumentType::Docx) },
+		{ NULL, NULL }
+	};
 
+	static const glue_Int_Constants s_licensepermissions[] =
+	{
 		{ "None", static_cast<lua_Integer>(glue::LicensePermissions::None) },
 		{ "PdfToWord", static_cast<lua_Integer>(glue::LicensePermissions::PdfToWord) },
 		{ "PdfTools", static_cast<lua_Integer>(glue::LicensePermissions::PdfTools) },
@@ -89,12 +108,66 @@ namespace
 		{ NULL, NULL }
 	};
 
+	static const glue_Int_Constants s_textrecovery[] =
+	{
+		{ "Never", static_cast<lua_Integer>(glue::TextRecovery::Never) },
+		{ "Always", static_cast<lua_Integer>(glue::TextRecovery::Always) },
+		{ "Automatic", static_cast<lua_Integer>(glue::TextRecovery::Automatic) },
+		{ "Default", static_cast<lua_Integer>(glue::TextRecovery::Default) },
+		{ NULL, NULL }
+	};
+
+	static const glue_Int_Constants s_textrecoverynse[] =
+	{
+		{ "Never", static_cast<lua_Integer>(glue::TextRecoveryNSE::Never) },
+		{ "Always", static_cast<lua_Integer>(glue::TextRecoveryNSE::Always) },
+		{ "Automatic", static_cast<lua_Integer>(glue::TextRecoveryNSE::Automatic) },
+		{ "Default", static_cast<lua_Integer>(glue::TextRecoveryNSE::Default) },
+		{ NULL, NULL }
+	};
+
+	static const glue_Int_Constants s_textrecoveryengine[] =
+	{
+		{ "Automatic", static_cast<lua_Integer>(glue::TextRecoveryEngine::Automatic) },
+		{ "Default", static_cast<lua_Integer>(glue::TextRecoveryEngine::Default) },
+		{ "MODI", static_cast<lua_Integer>(glue::TextRecoveryEngine::MODI) },
+		{ "SolidOCR", static_cast<lua_Integer>(glue::TextRecoveryEngine::SolidOCR) },
+		{ "IRIS", static_cast<lua_Integer>(glue::TextRecoveryEngine::IRIS) },
+		{ NULL, NULL }
+	};
+
+	static const glue_Int_Constants s_textrecoveryenginense[] =
+	{
+		{ "Default", static_cast<lua_Integer>(glue::TextRecoveryEngineNse::Default) },
+		{ "Automatic", static_cast<lua_Integer>(glue::TextRecoveryEngineNse::Automatic) },
+		{ "OCR", static_cast<lua_Integer>(glue::TextRecoveryEngineNse::OCR) },
+		{ "SolidNSE", static_cast<lua_Integer>(glue::TextRecoveryEngineNse::SolidNSE) },
+		{ NULL, NULL }
+	};
+
+	static const glue_Constants constants[] =
+	{
+		{ "ConvertProperties", s_convertproperties},
+		{ "DocumentType", s_documenttype },
+		{ "LicensePermissions", s_licensepermissions },
+		{ "TextRecovery", s_textrecovery },
+		{ "TextRecoveryNSE", s_textrecoverynse },
+		{ NULL, NULL }
+	};
+
 	int solidopen(lua_State *L)
 	{
 		luaL_newlib(L, solid_funcs);
-		const glue_Int_Constants* s;
-		for (s = constants; s->name; s++) {
-			lua_pushinteger(L, s->value);
+		const glue_Constants* s;
+		for (s = constants; s->name; s++)
+		{
+			const glue_Int_Constants* is;
+			lua_newtable(L);
+			for (is = s->value; is->name; ++is)
+			{
+				lua_pushinteger(L, is->value);
+				lua_setfield(L, -2, is->name);
+			}
 			lua_setfield(L, -2, s->name);
 		}
 		return 1;
@@ -258,6 +331,24 @@ int glue::license_allows(lua_State* L)
 	GLUE_GET_ARG(getint(L, &err, __function__, 1, type), err);
 	bool allows = SolidFramework::License::Allows(static_cast<SolidFramework::Plumbing::LicensePermissions>(type));
 	lua_pushboolean(L, allows);
+	return 1;
+}
+
+int glue::ocr_init(lua_State* L)
+{
+	GLUE_FUNCTION_NAME(ocr_init);
+	GLUE_CHECK_ARGUMENTS_COUNT(L, 1);
+	int err;
+	std::string tesseractDataDir;
+	GLUE_GET_ARG(getstring(L, &err, __function__, 1, tesseractDataDir), err);
+	SolidFramework::Imaging::Ocr::SetTesseractDataDirectoryLocation(towstring(tesseractDataDir));
+	std::vector<std::wstring> languages = SolidFramework::Imaging::Ocr::GetLanguages();
+	lua_newtable(L);
+	for (size_t i = 0; i < languages.size(); ++i)
+	{
+		lua_pushstring(L, tostring(languages[i]).c_str());
+		lua_seti(L, -2, i);
+	}
 	return 1;
 }
 
@@ -437,49 +528,79 @@ GLUE_SOLID_API int glue::converters_setProperty(lua_State* L)
 	case ConvertProperties::AutoRotate:
 	{
 		if (s_session.converters[s_session.current].type == PdfToWord)
-			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetAutoRotate);
+			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToOfficeDocumentConverter, SetAutoRotate);
+		break;
+	}
+	case ConvertProperties::TextRecoveryLanguage:
+	{
+		if (s_session.converters[s_session.current].type == PdfToWord)
+			GLUE_FAST_SETPROPERTY_STRING(SolidFramework::Converters::PdfToOfficeDocumentConverter, SetTextRecoveryLanguage);
+		break;
+	}
+	case ConvertProperties::TextRecoveryType:
+	{
+		if (s_session.converters[s_session.current].type == PdfToWord)
+			GLUE_FAST_SETPROPERTY_ENUM(SolidFramework::Converters::PdfToOfficeDocumentConverter, SetTextRecoveryType, glue::TextRecovery);
+		break;
+	}
+	case ConvertProperties::TextRecoveryNseType:
+	{
+		if (s_session.converters[s_session.current].type == PdfToWord)
+			GLUE_FAST_SETPROPERTY_ENUM(SolidFramework::Converters::PdfToOfficeDocumentConverter, SetTextRecoveryNseType, glue::TextRecoveryNSE);
+		break;
+	}
+	case ConvertProperties::TextRecoveryEngine:
+	{
+		if (s_session.converters[s_session.current].type == PdfToWord)
+			GLUE_FAST_SETPROPERTY_ENUM(SolidFramework::Converters::PdfToOfficeDocumentConverter, SetTextRecoveryEngine, glue::TextRecoveryEngine);
+		break;
+	}
+	case ConvertProperties::TextRecoveryEngineNse:
+	{
+		if (s_session.converters[s_session.current].type == PdfToWord)
+			GLUE_FAST_SETPROPERTY_ENUM(SolidFramework::Converters::PdfToOfficeDocumentConverter, SetTextRecoveryEngineNse, glue::TextRecoveryEngineNse);
 		break;
 	}
 	case ConvertProperties::TextRecoverySuspects:
 	{
 		if (s_session.converters[s_session.current].type == PdfToWord)
-			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetTextRecoverySuspects);
+			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToOfficeDocumentConverter, SetTextRecoverySuspects);
 		break;
 	}
 	case ConvertProperties::DetectSoftHyphens:
 	{
 		if (s_session.converters[s_session.current].type == PdfToWord)
-			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetDetectSoftHyphens);
+			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToOfficeDocumentConverter, SetDetectSoftHyphens);
 		break;
 	}
 	case ConvertProperties::NoRepairing:
 	{
 		if (s_session.converters[s_session.current].type == PdfToWord)
-			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetNoRepairing);
+			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToOfficeDocumentConverter, SetNoRepairing);
 		break;
 	}
 	case ConvertProperties::GraphicsAsImages:
 	{
 		if (s_session.converters[s_session.current].type == PdfToWord)
-			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetGraphicsAsImages);
+			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToOfficeDocumentConverter, SetGraphicsAsImages);
 		break;
 	}
 	case ConvertProperties::KeepInvisibleText:
 	{
 		if (s_session.converters[s_session.current].type == PdfToWord)
-			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetKeepInvisibleText);
+			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToOfficeDocumentConverter, SetKeepInvisibleText);
 		break;
 	}
 	case ConvertProperties::KeepBackgroundColorText:
 	{
 		if (s_session.converters[s_session.current].type == PdfToWord)
-			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, SetKeepBackgroundColorText);
+			GLUE_FAST_SETPROPERTY_BOOL(SolidFramework::Converters::PdfToOfficeDocumentConverter, SetKeepBackgroundColorText);
 		break;
 	}
 	case ConvertProperties::Password:
 	{
 		if (s_session.converters[s_session.current].type == PdfToWord)
-			GLUE_FAST_SETPROPERTY_STRING(SolidFramework::Converters::PdfToWordConverter, SetPassword);
+			GLUE_FAST_SETPROPERTY_STRING(SolidFramework::Converters::PdfToOfficeDocumentConverter, SetPassword);
 		break;
 	}
 	default:
@@ -572,49 +693,79 @@ GLUE_SOLID_API int glue::converters_getProperty(lua_State* L)
 	case ConvertProperties::AutoRotate:
 	{
 		if (s_session.converters[s_session.current].type == PdfToWord)
-			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetAutoRotate);
+			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToOfficeDocumentConverter, GetAutoRotate);
+		break;
+	}
+	case ConvertProperties::TextRecoveryLanguage:
+	{
+		if (s_session.converters[s_session.current].type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_STRING(SolidFramework::Converters::PdfToOfficeDocumentConverter, GetTextRecoveryLanguage);
+		break;
+	}
+	case ConvertProperties::TextRecoveryType:
+	{
+		if (s_session.converters[s_session.current].type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_ENUM(SolidFramework::Converters::PdfToOfficeDocumentConverter, GetTextRecoveryType);
+		break;
+	}
+	case ConvertProperties::TextRecoveryNseType:
+	{
+		if (s_session.converters[s_session.current].type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_ENUM(SolidFramework::Converters::PdfToOfficeDocumentConverter, GetTextRecoveryNseType);
+		break;
+	}
+	case ConvertProperties::TextRecoveryEngine:
+	{
+		if (s_session.converters[s_session.current].type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_ENUM(SolidFramework::Converters::PdfToOfficeDocumentConverter, GetTextRecoveryEngine);
+		break;
+	}
+	case ConvertProperties::TextRecoveryEngineNse:
+	{
+		if (s_session.converters[s_session.current].type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_ENUM(SolidFramework::Converters::PdfToOfficeDocumentConverter, GetTextRecoveryEngineNse);
 		break;
 	}
 	case ConvertProperties::TextRecoverySuspects:
 	{
 		if (s_session.converters[s_session.current].type == PdfToWord)
-			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetTextRecoverySuspects);
+			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToOfficeDocumentConverter, GetTextRecoverySuspects);
 		break;
 	}
 	case ConvertProperties::DetectSoftHyphens:
 	{
 		if (s_session.converters[s_session.current].type == PdfToWord)
-			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetDetectSoftHyphens);
+			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToOfficeDocumentConverter, GetDetectSoftHyphens);
 		break;
 	}
 	case ConvertProperties::NoRepairing:
 	{
 		if (s_session.converters[s_session.current].type == PdfToWord)
-			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetNoRepairing);
+			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToOfficeDocumentConverter, GetNoRepairing);
 		break;
 	}
 	case ConvertProperties::GraphicsAsImages:
 	{
 		if (s_session.converters[s_session.current].type == PdfToWord)
-			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetGraphicsAsImages);
+			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToOfficeDocumentConverter, GetGraphicsAsImages);
 		break;
 	}
 	case ConvertProperties::KeepInvisibleText:
 	{
 		if (s_session.converters[s_session.current].type == PdfToWord)
-			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetKeepInvisibleText);
+			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToOfficeDocumentConverter, GetKeepInvisibleText);
 		break;
 	}
 	case ConvertProperties::KeepBackgroundColorText:
 	{
 		if (s_session.converters[s_session.current].type == PdfToWord)
-			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToWordConverter, GetKeepBackgroundColorText);
+			GLUE_FAST_GETPROPERTY_BOOL(SolidFramework::Converters::PdfToOfficeDocumentConverter, GetKeepBackgroundColorText);
 		break;
 	}
 	case ConvertProperties::Password:
 	{
 		if (s_session.converters[s_session.current].type == PdfToWord)
-			GLUE_FAST_GETPROPERTY_STRING(SolidFramework::Converters::PdfToWordConverter, GetPassword);
+			GLUE_FAST_GETPROPERTY_STRING(SolidFramework::Converters::PdfToOfficeDocumentConverter, GetPassword);
 		break;
 	}
 	default:

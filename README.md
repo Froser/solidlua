@@ -15,5 +15,5 @@ if (not canLoadSolid) then
 end
 
 Solid.converters_new(0)
-Solid.converters_setProperty(Solid.DetectTables, false) -- Treats tables as plain text
+Solid.converters_setProperty(Solid.ConvertProperties.DetectTables, false) -- Treats tables as plain text
 Solid.converters_convert("G:\\cacm.pdf", "G:\\cacm2.docx")

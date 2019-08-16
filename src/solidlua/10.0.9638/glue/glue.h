@@ -22,6 +22,10 @@ enum DocumentType
 };
 
 typedef SolidFramework::Plumbing::LicensePermissions LicensePermissions;
+typedef SolidFramework::Converters::Plumbing::TextRecovery TextRecovery;
+typedef SolidFramework::Converters::Plumbing::TextRecoveryNSE TextRecoveryNSE;
+typedef SolidFramework::Converters::Plumbing::TextRecoveryEngine TextRecoveryEngine;
+typedef SolidFramework::Converters::Plumbing::TextRecoveryEngineNse TextRecoveryEngineNse;
 
 enum class ConvertProperties
 {
@@ -84,6 +88,31 @@ enum class ConvertProperties
 	 是否自动旋转。[bool]
 	*/
 	AutoRotate,
+
+	/*!
+	 进行OCR时的语言。默认为空。[string]
+	*/
+	TextRecoveryLanguage,
+
+	/*!
+	 进行OCR转换时的策略。[glue::TextRecovery]
+	*/
+	TextRecoveryType,
+
+	/*!
+	 进行非标准编码(NSE)OCR转换时的策略。[glue::TextRecoveryNSE]
+	*/
+	TextRecoveryNseType,
+
+	/*!
+	 进行OCR转换的引擎。[glue::TextRecoveryEngine]
+	*/
+	TextRecoveryEngine,
+
+	/*!
+	 进行非标准编码(NSE)OCR转换时的引擎。[glue::TextRecoveryEngineNse]
+	*/
+	TextRecoveryEngineNse,
 
 	/*!
 	 是否标记可疑文字。对于一些转换成功率较低的文字部分，设置是否用黄色底色标记出来。
@@ -151,6 +180,13 @@ extern "C"
 	 r1 [bool]: 是否拥有这个能力。
 	*/
 	GLUE_SOLID_API int license_allows(lua_State* L);
+
+	//! 初始化一个OCR环境。如果不调用，则无法使用OCR相关功能。
+	/*
+	 p1 [string]: OCR训练数据文件夹。
+	 r1 [string array]: 返回当前支持的OCR语言。
+	*/
+	GLUE_SOLID_API int ocr_init(lua_State* L);
 
 	//! 创建一个转换器。在进行任何操作之前，应该先创建一个转换器。
 	/*
