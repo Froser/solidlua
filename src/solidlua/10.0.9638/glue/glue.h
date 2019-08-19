@@ -5,9 +5,6 @@
 #define GLUE_BEGIN_NS namespace glue {
 #define GLUE_END_NS }
 
-#define GLUE_BEGIN_EXTERN_C extern "C" {
-#define GLUE_BEGIN_END_C }
-
 GLUE_BEGIN_NS
 
 #define GLUE_SOLID_API
@@ -26,6 +23,11 @@ typedef SolidFramework::Converters::Plumbing::TextRecovery TextRecovery;
 typedef SolidFramework::Converters::Plumbing::TextRecoveryNSE TextRecoveryNSE;
 typedef SolidFramework::Converters::Plumbing::TextRecoveryEngine TextRecoveryEngine;
 typedef SolidFramework::Converters::Plumbing::TextRecoveryEngineNse TextRecoveryEngineNse;
+typedef SolidFramework::Converters::Plumbing::ImageAnchoringMode ImageAnchoringMode;
+typedef SolidFramework::Converters::Plumbing::ReconstructionMode ReconstructionMode;
+typedef SolidFramework::Converters::Plumbing::HeaderAndFooterMode HeaderAndFooterMode;
+typedef SolidFramework::Converters::Plumbing::FootnotesMode FootnotesMode;
+typedef SolidFramework::Converters::Plumbing::MarkupAnnotConversionType MarkupAnnotConversionType;
 
 enum class ConvertProperties
 {
@@ -136,7 +138,7 @@ enum class ConvertProperties
 	GraphicsAsImages,
 
 	/*!
-	 设置是否应该恢复没有描边或填充的文字。[bool]
+	 是否应该恢复没有描边或填充的文字。[bool]
 	*/
 	KeepInvisibleText,
 
@@ -146,9 +148,34 @@ enum class ConvertProperties
 	KeepBackgroundColorText,
 
 	/*!
-	 设置PDF文档的密码。[string]
+	 PDF文档的密码。[string]
 	*/
 	Password,
+
+	/*!
+	 图像锚点模式。[glue::ImageAnchoringMode]
+	*/
+	ImageAnchoringMode,
+
+	/*!
+	 文档重构模式。[glue::ReconstructionMode]
+	*/
+	ReconstructionMode,
+
+	/*!
+	 页眉页脚模式。[glue::HeaderAndFooterMode]
+	*/
+	HeaderAndFooterMode,
+
+	/*!
+	 脚注模式。[glue::FootnotesMode]
+	*/
+	FootnotesMode,
+
+	/*!
+		注解模式。[glue::MarkupAnnotConversionType]
+	*/
+	MarkupAnnotConversionType,
 
 	/*!
 	 设置文档输出范围时，可输入形如1-2,3,4的字符串。[string]
@@ -159,11 +186,18 @@ enum class ConvertProperties
 
 extern "C"
 {
+	void solidlua_appendargs(const char*);
 	void solid_openlibs(lua_State* L);
 	void solid_close();
 
+	//! 获取程序的命令行参数
+	/*!
+		r1 [string array]: 命令行参数列表
+	*/
+	GLUE_SOLID_API int args(lua_State* L);
+
 	//! 初始化solid sdk。
-	/*
+	/*!
 	 p1 [string]: solid sdk路径
 	 p2 [string]: solid 授权name
 	 p3 [string]: solid 授权email

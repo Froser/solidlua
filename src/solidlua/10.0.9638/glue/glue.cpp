@@ -51,6 +51,7 @@ namespace
 	} s_session;
 
 	static const luaL_Reg solid_funcs[] = {
+		{ "args", glue::args },
 		{ "platform_init", glue::platform_init },
 		{ "platform_init_preset", glue::platform_init_preset },
 		{ "license_allows", glue::license_allows },
@@ -78,6 +79,10 @@ namespace
 		{ "SupportRightToLeftWritingDirection", static_cast<lua_Integer>(glue::ConvertProperties::SupportRightToLeftWritingDirection) },
 		{ "AutoRotate", static_cast<lua_Integer>(glue::ConvertProperties::AutoRotate) },
 		{ "TextRecoveryLanguage", static_cast<lua_Integer>(glue::ConvertProperties::TextRecoveryLanguage) },
+		{ "TextRecoveryType", static_cast<lua_Integer>(glue::ConvertProperties::TextRecoveryType) },
+		{ "TextRecoveryNseType", static_cast<lua_Integer>(glue::ConvertProperties::TextRecoveryNseType) },
+		{ "TextRecoveryEngine", static_cast<lua_Integer>(glue::ConvertProperties::TextRecoveryEngine) },
+		{ "TextRecoveryEngineNse", static_cast<lua_Integer>(glue::ConvertProperties::TextRecoveryEngineNse) },
 		{ "TextRecoverySuspects", static_cast<lua_Integer>(glue::ConvertProperties::TextRecoverySuspects) },
 		{ "DetectSoftHyphens", static_cast<lua_Integer>(glue::ConvertProperties::DetectSoftHyphens) },
 		{ "NoRepairing", static_cast<lua_Integer>(glue::ConvertProperties::NoRepairing) },
@@ -85,6 +90,11 @@ namespace
 		{ "KeepInvisibleText", static_cast<lua_Integer>(glue::ConvertProperties::KeepInvisibleText) },
 		{ "KeepBackgroundColorText", static_cast<lua_Integer>(glue::ConvertProperties::KeepBackgroundColorText) },
 		{ "Password", static_cast<lua_Integer>(glue::ConvertProperties::Password) },
+		{ "ImageAnchoringMode", static_cast<lua_Integer>(glue::ConvertProperties::ImageAnchoringMode) },
+		{ "ReconstructionMode", static_cast<lua_Integer>(glue::ConvertProperties::ReconstructionMode) },
+		{ "HeaderAndFooterMode", static_cast<lua_Integer>(glue::ConvertProperties::HeaderAndFooterMode) },
+		{ "FootnotesMode", static_cast<lua_Integer>(glue::ConvertProperties::FootnotesMode) },
+		{ "MarkupAnnotConversionType", static_cast<lua_Integer>(glue::ConvertProperties::MarkupAnnotConversionType) },
 		{ "PageRange", static_cast<lua_Integer>(glue::ConvertProperties::PageRange) },
 		{ NULL, NULL }
 	};
@@ -146,15 +156,64 @@ namespace
 		{ NULL, NULL }
 	};
 
+	static const glue_Int_Constants s_imageanchoring[] = 
+	{
+		{ "Automatic", static_cast<lua_Integer>(glue::ImageAnchoringMode::Automatic) },
+		{ "Paragraph", static_cast<lua_Integer>(glue::ImageAnchoringMode::Paragraph) },
+		{ "Page", static_cast<lua_Integer>(glue::ImageAnchoringMode::Page) },
+		{ "RemoveImages", static_cast<lua_Integer>(glue::ImageAnchoringMode::RemoveImages) },
+		{ NULL, NULL }
+	};
+
+	static const glue_Int_Constants s_reconstructionmode[] =
+	{
+		{ "Flowing", static_cast<lua_Integer>(glue::ReconstructionMode::Flowing) },
+		{ "Exact", static_cast<lua_Integer>(glue::ReconstructionMode::Exact) },
+		{ "Continuous", static_cast<lua_Integer>(glue::ReconstructionMode::Continuous) },
+		{ "PlainText", static_cast<lua_Integer>(glue::ReconstructionMode::PlainText) },
+		{ "NoColumns", static_cast<lua_Integer>(glue::ReconstructionMode::NoColumns) },
+		{ NULL, NULL }
+	};
+
+	static const glue_Int_Constants s_headerandfootermode[] =
+	{
+		{ "Detect", static_cast<lua_Integer>(glue::HeaderAndFooterMode::Detect) },
+		{ "Ignore", static_cast<lua_Integer>(glue::HeaderAndFooterMode::Ignore) },
+		{ "Remove", static_cast<lua_Integer>(glue::HeaderAndFooterMode::Remove) },
+		{ NULL, NULL }
+	};
+
+	static const glue_Int_Constants s_footnotesmode[] =
+	{
+		{ "Detect", static_cast<lua_Integer>(glue::FootnotesMode::Detect) },
+		{ "Ignore", static_cast<lua_Integer>(glue::FootnotesMode::Ignore) },
+		{ "Remove", static_cast<lua_Integer>(glue::FootnotesMode::Remove) },
+		{ NULL, NULL }
+	};
+
+	static const glue_Int_Constants s_markupannotconversiontype[] =
+	{
+		{ "Never", static_cast<lua_Integer>(glue::MarkupAnnotConversionType::Never) },
+		{ "Textbox", static_cast<lua_Integer>(glue::MarkupAnnotConversionType::Textbox) },
+		{ "Comment", static_cast<lua_Integer>(glue::MarkupAnnotConversionType::Comment) },
+		{ NULL, NULL }
+	};
+
 	static const glue_Constants constants[] =
 	{
 		{ "ConvertProperties", s_convertproperties},
 		{ "DocumentType", s_documenttype },
 		{ "LicensePermissions", s_licensepermissions },
 		{ "TextRecovery", s_textrecovery },
-		{ "TextRecoveryNSE", s_textrecoverynse },
+		{ "ImageAnchoringMode", s_imageanchoring },
+		{ "ReconstructionMode", s_reconstructionmode },
+		{ "HeaderAndFooterMode", s_headerandfootermode },
+		{ "FootnotesMode", s_footnotesmode },
+		{ "MarkupAnnotConversionType", s_markupannotconversiontype },
 		{ NULL, NULL }
 	};
+
+	std::vector<std::string> s_args;
 
 	int solidopen(lua_State *L)
 	{
@@ -246,6 +305,11 @@ namespace
 	}
 }
 
+void glue::solidlua_appendargs(const char* a)
+{
+	s_args.push_back(a);
+}
+
 void glue::solid_openlibs(lua_State* L)
 {
 	const luaL_Reg *lib;
@@ -258,6 +322,20 @@ void glue::solid_openlibs(lua_State* L)
 void glue::solid_close()
 {
 	disposeConverter();
+}
+
+int glue::args(lua_State* L)
+{
+	GLUE_FUNCTION_NAME(args);
+	GLUE_CHECK_ARGUMENTS_COUNT(L, 0);
+	lua_newtable(L);
+	int i = 0;
+	for (const std::string& arg : s_args)
+	{
+		lua_pushstring(L, arg.c_str());
+		lua_seti(L, -2, i++);
+	}
+	return 1;
 }
 
 int glue::platform_init(lua_State* L)
@@ -411,9 +489,17 @@ GLUE_SOLID_API int glue::converters_convert(lua_State* L)
 	GLUE_GET_ARG(getstring(L, &err, __function__, 1, input), err);
 	GLUE_GET_ARG(getstring(L, &err, __function__, 2, output), err);
 
-	s_session.converters[s_session.current].converter->AddSourceFile(towstring(input));
-	SolidFramework::Converters::Plumbing::ConversionStatus status = s_session.converters[s_session.current].converter->ConvertTo(towstring(output), true);
-	lua_pushinteger(L, static_cast<lua_Integer>(status));
+	try
+	{
+		s_session.converters[s_session.current].converter->AddSourceFile(towstring(input));
+		SolidFramework::Converters::Plumbing::ConversionStatus status = s_session.converters[s_session.current].converter->ConvertTo(towstring(output), true);
+		lua_pushinteger(L, static_cast<lua_Integer>(status));
+	}
+	catch (SolidFramework::FileNotFoundException e)
+	{
+		luaL_error(L, "%s: %s", e.GetRawMessage().c_str(), tostring(e.GetPath()).c_str());
+	}
+
 	return 1;
 }
 
@@ -442,6 +528,10 @@ GLUE_SOLID_API int glue::converters_convert(lua_State* L)
 #define GLUE_FAST_GETPROPERTY_STRING(type, method) \
 	{ ret = 1; type* converter = static_cast<type*>(s_session.converters[s_session.current].converter); \
 	lua_pushstring(L, tostring(converter-> method ()).c_str()); }
+
+#define GLUE_FAST_GETPROPERTY_STRING_IF(type, condition, method) \
+	{ ret = 1; type* converter = static_cast<type*>(s_session.converters[s_session.current].converter); \
+	if (!!converter-> condition()) lua_pushstring(L, tostring(converter-> method ()).c_str()); else lua_pushstring(L, ""); }
 
 #define GLUE_FAST_GETPROPERTY_ENUM(type, method) \
 	{ ret = 1; type* converter = static_cast<type*>(s_session.converters[s_session.current].converter); \
@@ -602,6 +692,36 @@ GLUE_SOLID_API int glue::converters_setProperty(lua_State* L)
 	{
 		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_SETPROPERTY_STRING(SolidFramework::Converters::PdfToOfficeDocumentConverter, SetPassword);
+		break;
+	}
+	case ConvertProperties::ImageAnchoringMode:
+	{
+		if (s_session.converters[s_session.current].type == PdfToWord)
+			GLUE_FAST_SETPROPERTY_ENUM(SolidFramework::Converters::PdfToWordConverter, SetImageAnchoringMode, SolidFramework::Converters::Plumbing::ImageAnchoringMode);
+		break;
+	}
+	case ConvertProperties::ReconstructionMode:
+	{
+		if (s_session.converters[s_session.current].type == PdfToWord)
+			GLUE_FAST_SETPROPERTY_ENUM(SolidFramework::Converters::PdfToWordConverter, SetReconstructionMode, SolidFramework::Converters::Plumbing::ReconstructionMode);
+		break;
+	}
+	case ConvertProperties::HeaderAndFooterMode:
+	{
+		if (s_session.converters[s_session.current].type == PdfToWord)
+			GLUE_FAST_SETPROPERTY_ENUM(SolidFramework::Converters::PdfToWordConverter, SetHeaderAndFooterMode, SolidFramework::Converters::Plumbing::HeaderAndFooterMode);
+		break;
+	}
+	case ConvertProperties::FootnotesMode:
+	{
+		if (s_session.converters[s_session.current].type == PdfToWord)
+			GLUE_FAST_SETPROPERTY_ENUM(SolidFramework::Converters::PdfToWordConverter, SetFootnotesMode, SolidFramework::Converters::Plumbing::FootnotesMode);
+		break;
+	}
+	case ConvertProperties::MarkupAnnotConversionType:
+	{
+		if (s_session.converters[s_session.current].type == PdfToWord)
+			GLUE_FAST_SETPROPERTY_ENUM(SolidFramework::Converters::PdfToWordConverter, SetMarkupAnnotConversionType, SolidFramework::Converters::Plumbing::MarkupAnnotConversionType);
 		break;
 	}
 	case ConvertProperties::PageRange:
@@ -787,10 +907,42 @@ GLUE_SOLID_API int glue::converters_getProperty(lua_State* L)
 			GLUE_FAST_GETPROPERTY_STRING(SolidFramework::Converters::PdfToOfficeDocumentConverter, GetPassword);
 		break;
 	}
-	case ConvertProperties::PageRange:
+	case ConvertProperties::ImageAnchoringMode:
+	{
 		if (s_session.converters[s_session.current].type == PdfToWord)
-			GLUE_FAST_GETPROPERTY_STRING(SolidFramework::Converters::PdfToOfficeDocumentConverter, GetPageRange()->ToString);
+			GLUE_FAST_GETPROPERTY_ENUM(SolidFramework::Converters::PdfToWordConverter, GetImageAnchoringMode);
 		break;
+	}
+	case ConvertProperties::ReconstructionMode:
+	{
+		if (s_session.converters[s_session.current].type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_ENUM(SolidFramework::Converters::PdfToWordConverter, GetReconstructionMode);
+		break;
+	}
+	case ConvertProperties::HeaderAndFooterMode:
+	{
+		if (s_session.converters[s_session.current].type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_ENUM(SolidFramework::Converters::PdfToWordConverter, GetHeaderAndFooterMode);
+		break;
+	}
+	case ConvertProperties::FootnotesMode:
+	{
+		if (s_session.converters[s_session.current].type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_ENUM(SolidFramework::Converters::PdfToWordConverter, GetFootnotesMode);
+		break;
+	}
+	case ConvertProperties::MarkupAnnotConversionType:
+	{
+		if (s_session.converters[s_session.current].type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_ENUM(SolidFramework::Converters::PdfToWordConverter, GetMarkupAnnotConversionType);
+		break;
+	}
+	case ConvertProperties::PageRange:
+	{
+		if (s_session.converters[s_session.current].type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_STRING_IF(SolidFramework::Converters::PdfToOfficeDocumentConverter, GetPageRange, GetPageRange()->ToString);
+		break;
+	}
 	default:
 		luaL_error(L, "In function %s: Property type %d is not supported.", __function__, type);
 	}

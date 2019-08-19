@@ -14,7 +14,7 @@
 
 int main(int argc, char** argv)
 {
-	if (argc != 2)
+	if (argc < 2)
 	{
 		printf("Not enough arguments.");
 		return -1;
@@ -43,6 +43,11 @@ int main(int argc, char** argv)
 	lua_State* L = luaL_newstate();
 	luaL_openlibs(L);
 	glue::solid_openlibs(L);
+
+	for (int i = 0; i < argc; ++i)
+	{
+		glue::solidlua_appendargs(argv[i]);
+	}
 
 	if (luaL_loadfile(L, filename.c_str()) == LUA_OK)
 	{
