@@ -149,6 +149,12 @@ enum class ConvertProperties
 	 设置PDF文档的密码。[string]
 	*/
 	Password,
+
+	/*!
+	 设置文档输出范围时，可输入形如1-2,3,4的字符串。[string]
+	 获取文档输出范围时，将获取一个文档页码的列表。[int array]
+	*/
+	PageRange,
 };
 
 extern "C"

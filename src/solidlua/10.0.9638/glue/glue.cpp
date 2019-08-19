@@ -85,6 +85,7 @@ namespace
 		{ "KeepInvisibleText", static_cast<lua_Integer>(glue::ConvertProperties::KeepInvisibleText) },
 		{ "KeepBackgroundColorText", static_cast<lua_Integer>(glue::ConvertProperties::KeepBackgroundColorText) },
 		{ "Password", static_cast<lua_Integer>(glue::ConvertProperties::Password) },
+		{ "PageRange", static_cast<lua_Integer>(glue::ConvertProperties::PageRange) },
 		{ NULL, NULL }
 	};
 
@@ -440,7 +441,7 @@ GLUE_SOLID_API int glue::converters_convert(lua_State* L)
 
 #define GLUE_FAST_GETPROPERTY_STRING(type, method) \
 	{ ret = 1; type* converter = static_cast<type*>(s_session.converters[s_session.current].converter); \
-	lua_pushstring(L, tostring(converter-> method ()).c_str()); lua_assert(false);  }
+	lua_pushstring(L, tostring(converter-> method ()).c_str()); }
 
 #define GLUE_FAST_GETPROPERTY_ENUM(type, method) \
 	{ ret = 1; type* converter = static_cast<type*>(s_session.converters[s_session.current].converter); \
@@ -601,6 +602,24 @@ GLUE_SOLID_API int glue::converters_setProperty(lua_State* L)
 	{
 		if (s_session.converters[s_session.current].type == PdfToWord)
 			GLUE_FAST_SETPROPERTY_STRING(SolidFramework::Converters::PdfToOfficeDocumentConverter, SetPassword);
+		break;
+	}
+	case ConvertProperties::PageRange:
+	{
+		if (s_session.converters[s_session.current].type == PdfToWord)
+		{
+			std::string v;
+			GLUE_GET_ARG(getstring(L, &err, __function__, 2, v), err);
+			SolidFramework::Converters::PdfToOfficeDocumentConverter* converter =
+				static_cast<SolidFramework::Converters::PdfToOfficeDocumentConverter*>(s_session.converters[s_session.current].converter);
+
+			std::vector<int> pages;
+			std::shared_ptr<SolidFramework::PageRange> pageRange = std::make_shared<SolidFramework::PageRange>(std::move(pages));
+			if (SolidFramework::PageRange::TryParse(towstring(v), pageRange))
+				converter->SetPageRange(pageRange);
+			else
+				luaL_error(L, "In function %s: Wrong page range string '%s', parse failed.", __function__, towstring(v).c_str());
+		}
 		break;
 	}
 	default:
@@ -768,6 +787,10 @@ GLUE_SOLID_API int glue::converters_getProperty(lua_State* L)
 			GLUE_FAST_GETPROPERTY_STRING(SolidFramework::Converters::PdfToOfficeDocumentConverter, GetPassword);
 		break;
 	}
+	case ConvertProperties::PageRange:
+		if (s_session.converters[s_session.current].type == PdfToWord)
+			GLUE_FAST_GETPROPERTY_STRING(SolidFramework::Converters::PdfToOfficeDocumentConverter, GetPageRange()->ToString);
+		break;
 	default:
 		luaL_error(L, "In function %s: Property type %d is not supported.", __function__, type);
 	}
