@@ -205,6 +205,9 @@ namespace
 		{ "DocumentType", s_documenttype },
 		{ "LicensePermissions", s_licensepermissions },
 		{ "TextRecovery", s_textrecovery },
+		{ "TextRecoveryNSE", s_textrecoverynse },
+		{ "TextRecoveryEngine", s_textrecoveryengine },
+		{ "TextRecoveryEngineNse", s_textrecoveryenginense },
 		{ "ImageAnchoringMode", s_imageanchoring },
 		{ "ReconstructionMode", s_reconstructionmode },
 		{ "HeaderAndFooterMode", s_headerandfootermode },
@@ -498,6 +501,10 @@ GLUE_SOLID_API int glue::converters_convert(lua_State* L)
 	catch (SolidFramework::FileNotFoundException e)
 	{
 		luaL_error(L, "%s: %s", e.GetRawMessage().c_str(), tostring(e.GetPath()).c_str());
+	}
+	catch (SolidFramework::ArgumentException e)
+	{
+		luaL_error(L, "%s", e.GetRawMessage());
 	}
 
 	return 1;
